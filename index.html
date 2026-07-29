@@ -9,52 +9,62 @@
 <body>
 
   <canvas id="view"></canvas>
-
   <div id="hurt"></div>
 
+  <!-- ==================== IN-MATCH HUD ==================== -->
   <div id="hud" class="hidden">
     <div id="reticle"></div>
     <div id="hitmarker" class="hidden"></div>
     <div id="feed" class="hidden"></div>
 
-    <div class="topbar">
-      <div class="chip"><span class="chip__label">Alive</span><span class="chip__value" id="alive">10</span></div>
-      <div class="chip"><span class="chip__label">Elims</span><span class="chip__value" id="kills">0</span></div>
-      <div class="chip chip--storm">
-        <span class="chip__label" id="storm-label">Next circle</span>
-        <span class="chip__value" id="storm-timer">0:26</span>
+    <!-- top right: compass, minimap, then the match counters -->
+    <div class="mapstack">
+      <div class="compass"><span id="compass-tape">N</span></div>
+      <canvas id="minimap" width="220" height="220"></canvas>
+      <div class="counters">
+        <span class="counter"><i class="ico ico--clock"></i><b id="storm-timer">0:26</b></span>
+        <span class="counter"><i class="ico ico--user"></i><b id="alive">10</b></span>
+        <span class="counter"><i class="ico ico--target"></i><b id="kills">0</b></span>
+      </div>
+      <div class="phase" id="storm-label">Next circle</div>
+    </div>
+
+    <!-- bottom left: shield over health -->
+    <div class="vitals">
+      <div class="vitals__rows">
+        <div class="vbar vbar--shield"><div id="shield-fill"></div><span id="shield-text">0</span></div>
+        <div class="vbar vbar--health"><div id="health-fill"></div><span id="health-text">100</span></div>
       </div>
     </div>
 
-    <canvas id="minimap" width="200" height="200"></canvas>
-
-    <div class="bottom">
-      <div class="bars">
-        <div class="bar bar--shield"><div id="shield-fill"></div></div>
-        <div class="bar bar--health"><div id="health-fill"></div></div>
-        <div class="bars__nums">
-          <span><b id="shield-text">0</b> shield</span>
-          <span><b id="health-text">100</b> hp</span>
-        </div>
+    <!-- bottom right: materials, then build pieces, then the weapon slots -->
+    <div class="kit">
+      <div class="mats">
+        <span class="mat"><i class="mat__icon mat__icon--wood"></i><b id="wood">120</b></span>
       </div>
-
+      <div class="builds" id="builds">
+        <button class="bpiece" data-piece="0" title="Wall"><span class="bicon bicon--wall"></span></button>
+        <button class="bpiece" data-piece="1" title="Ramp"><span class="bicon bicon--ramp"></span></button>
+        <button class="bpiece" data-piece="2" title="Floor"><span class="bicon bicon--floor"></span></button>
+      </div>
       <div class="hotbar" id="hotbar">
         <button class="slot on"><span class="slot__key">1</span><span class="slot__name">Pickaxe</span></button>
         <button class="slot"><span class="slot__key">2</span><span class="slot__name">—</span></button>
         <button class="slot"><span class="slot__key">3</span><span class="slot__name">—</span></button>
         <button class="slot"><span class="slot__key">4</span><span class="slot__name">Build</span></button>
       </div>
+      <div class="gunline"><b id="gun-name">Pickaxe</b><span id="ammo">∞</span></div>
+    </div>
 
-      <div class="right">
-        <div class="chip chip--wood"><span class="chip__label">Wood</span><span class="chip__value" id="wood">120</span></div>
-        <div class="chip chip--ammo">
-          <span class="chip__label" id="gun-name">Pickaxe</span>
-          <span class="chip__value" id="ammo">∞</span>
-        </div>
-      </div>
+    <!-- career bar along the bottom -->
+    <div class="xp">
+      <span class="xp__lvl">LVL <b id="xp-level">1</b></span>
+      <div class="xp__track"><div id="xp-fill"></div></div>
+      <span class="xp__note" id="xp-note">Win matches to rank up</span>
     </div>
   </div>
 
+  <!-- ==================== TOUCH ==================== -->
   <div id="touch" class="hidden">
     <div id="look-area"></div>
     <div id="stick"><div id="stick-knob"></div></div>
@@ -64,31 +74,41 @@
     <button id="reload-btn">⟳</button>
   </div>
 
+  <!-- ==================== LOBBY ==================== -->
   <div id="overlay">
-    <div id="panel">
-      <h1 id="panel-title">Bot Royale</h1>
-      <p id="panel-text">
-        Ten drop in, one walks out. Loot weapons, chop wood, throw up walls, and stay ahead of the storm.
-        Every other player is a bot — and they build too.
-      </p>
+    <header class="lobby-top">
+      <div class="brand"><span class="brand__mark">BR</span><span class="brand__name">BOT ROYALE</span></div>
+      <nav class="tabs">
+        <button class="tab on">Lobby</button>
+        <button class="tab" id="tab-career">Career</button>
+        <button class="tab" id="tab-help">Controls</button>
+      </nav>
+      <div class="lobby-top__right">
+        <label class="who"><span>Name</span>
+          <input id="player-name" type="text" maxlength="14" spellcheck="false" placeholder="Player">
+        </label>
+        <div class="vbucks"><i class="mat__icon mat__icon--wood"></i><b id="career-wins">0</b><span>wins</span></div>
+      </div>
+    </header>
 
-      <label class="who">
-        <span>Your name</span>
-        <input id="player-name" type="text" maxlength="14" spellcheck="false" placeholder="Player">
-      </label>
+    <div class="lobby-body">
+      <aside class="lobby-left">
+        <div class="result" id="result">
+          <span class="result__title" id="panel-title">BOT ROYALE</span>
+          <span class="result__text" id="panel-text">Ten drop in. One walks out.</span>
+        </div>
 
-      <button id="play" class="play">Drop in</button>
+        <div class="modecard">
+          <span class="modecard__tag">Playlist</span>
+          <span class="modecard__name">SOLO</span>
+          <span class="modecard__sub">You vs 9 bots · building on · storm on</span>
+        </div>
 
-      <ul class="keys">
-        <li><b>W A S D</b> move</li>
-        <li><b>Mouse</b> look · <b>Click</b> shoot</li>
-        <li><b>Space</b> jump · <b>Shift</b> sprint</li>
-        <li><b>1-4</b> pickaxe / guns / build</li>
-        <li><b>Q</b> build mode · <b>F</b> or wheel: wall / ramp / floor</li>
-        <li><b>R</b> reload · <b>Esc</b> pause</li>
-      </ul>
+        <button id="play" class="play">PLAY</button>
+        <p class="ready">Ready · Solo</p>
+      </aside>
 
-      <div id="board">
+      <section class="lobby-panel hidden" id="career">
         <div class="board__head">
           <span class="board__title">🏆 Best matches</span>
           <button id="board-clear" type="button">Clear</button>
@@ -96,16 +116,43 @@
         <ol id="board-list"></ol>
         <p id="board-empty" class="board__empty">No matches yet — drop in and see how far you get.</p>
         <span id="board-tally"></span>
-      </div>
+      </section>
 
-      <p class="note">On a phone: left stick to move, drag to look, FIRE / JUMP / BUILD on the right.</p>
+      <section class="lobby-panel hidden" id="help">
+        <span class="board__title">Controls</span>
+        <ul class="keys">
+          <li><b>W A S D</b> move · <b>Space</b> jump · <b>Shift</b> sprint</li>
+          <li><b>Mouse</b> look · <b>Click</b> shoot · <b>R</b> reload</li>
+          <li><b>1</b> pickaxe · <b>2 3</b> weapons · <b>4</b> or <b>Q</b> build</li>
+          <li><b>F</b> or mouse wheel: wall → ramp → floor</li>
+          <li><b>Esc</b> pause</li>
+        </ul>
+        <p class="note">Phone: left stick moves, drag to look, FIRE / JUMP / BUILD on the right.</p>
+      </section>
     </div>
+
+    <footer class="locker">
+      <div class="locker__group">
+        <span class="locker__label">Outfit</span>
+        <div class="skins" id="skins"></div>
+      </div>
+      <div class="locker__group">
+        <span class="locker__label">Arsenal on the island</span>
+        <div class="arsenal">
+          <span class="item item--rare">Assault Rifle</span>
+          <span class="item item--epic">Pump Shotgun</span>
+          <span class="item item--common">SMG</span>
+          <span class="item item--legendary">Bolt Sniper</span>
+        </div>
+      </div>
+    </footer>
   </div>
 
   <script src="vendor/three.min.js"></script>
   <script src="src/arena.js"></script>
   <script src="src/build.js"></script>
   <script src="src/bots.js"></script>
+  <script src="src/lobby.js"></script>
   <script src="src/controls.js"></script>
   <script src="src/audio.js"></script>
   <script src="src/scores.js"></script>

@@ -123,6 +123,8 @@
     'storm-label', 'minimap', 'hotbar', 'reticle', 'hitmarker', 'hurt', 'feed', 'touch',
     'fire-btn', 'jump-btn', 'build-btn', 'reload-btn', 'player-name', 'board-list',
     'board-empty', 'board-clear', 'board-tally', 'stick', 'stick-knob', 'look-area',
+    'builds', 'compass-tape', 'xp-level', 'xp-fill', 'xp-note', 'career-wins',
+    'career', 'help', 'tab-career', 'tab-help', 'skins', 'result',
   ].forEach((id) => { el[id] = document.getElementById(id); });
   const mapCtx = el.minimap.getContext('2d');
 
@@ -150,12 +152,12 @@
     Build.init(THREE, scene);
     Build.reset();
 
-    /* the player's own body, seen over the shoulder */
-    if (!player.figure) {
-      player.figure = Figure.make(THREE, 0xef4444, 0xf8fafc);
-      scene.add(player.figure);
-    }
-    player.figure.visible = true;
+    /* the player's own body, seen over the shoulder, in the chosen outfit */
+    if (player.figure) scene.remove(player.figure);
+    const skin = Lobby.current;
+    player.figure = Figure.make(THREE, skin.body, skin.trim);
+    player.figure.traverse((o) => { if (o.isMesh) o.castShadow = true; });
+    scene.add(player.figure);
 
     const angle = rng() * Math.PI * 2;
     player.x = Math.cos(angle) * Arena.ARENA * 0.38;
@@ -594,6 +596,8 @@
     el.touch.classList.add('hidden');
     Audio3D.blip(won ? 'win' : 'lose');
     renderBoard();
+    renderCareer();
+    showTab('career');
   }
 
   function start() {
@@ -637,6 +641,34 @@
       slot.classList.toggle('on', i === player.slot);
       slot.querySelector('.slot__name').textContent = names[i];
     });
+    /* the build row lights up only while building, and marks the live piece */
+    el.builds.style.opacity = player.slot === 3 ? '1' : '0.45';
+    el.builds.querySelectorAll('.bpiece').forEach((piece, i) => {
+      piece.classList.toggle('on', player.slot === 3 && Build.selected === i);
+    });
+  }
+
+  /* Career level from lifetime matches and eliminations. */
+  function renderCareer() {
+    const runs = Stats.top();
+    const elims = runs.reduce((sum, r) => sum + r.kills, 0);
+    const points = Stats.data.matches * 12 + Stats.data.wins * 40 + elims * 4;
+    const level = Math.max(1, Math.floor(points / 100) + 1);
+    const into = points % 100;
+    el['xp-level'].textContent = level;
+    el['xp-fill'].style.width = `${into}%`;
+    el['xp-note'].textContent = `${Stats.data.wins} win${Stats.data.wins === 1 ? '' : 's'} · ${Stats.data.matches} matches`;
+    el['career-wins'].textContent = Stats.data.wins;
+  }
+
+  /* A rolling compass tape, so the map has a heading like a real HUD. */
+  const HEADINGS = ['N', 'NE', 'E', 'SE', 'S', 'SW', 'W', 'NW'];
+  function renderCompass() {
+    // yaw 0 faces -Z, which is north
+    let deg = (-player.yaw * 180 / Math.PI) % 360;
+    if (deg < 0) deg += 360;
+    const index = Math.round(deg / 45) % 8;
+    el['compass-tape'].textContent = HEADINGS[index];
   }
 
   function renderHud() {
@@ -746,6 +778,7 @@
     renderer.setSize(window.innerWidth, window.innerHeight, false);
     camera.aspect = window.innerWidth / window.innerHeight;
     camera.updateProjectionMatrix();
+    Lobby.resize(window.innerWidth, window.innerHeight);
   }
 
   function frame() {
@@ -784,14 +817,19 @@
       updateStorm(dt);
       renderHud();
       renderMinimap();
+      renderCompass();
 
       if (feedTimer > 0) {
         feedTimer -= dt;
         if (feedTimer <= 0) el.feed.classList.add('hidden');
       }
+    } else {
+      /* Between matches the lobby stage is what gets drawn. */
+      Lobby.update(dt);
     }
 
-    renderer.render(scene, camera);
+    if (mode === 'playing' || mode === 'paused') renderer.render(scene, camera);
+    else renderer.render(Lobby.scene, Lobby.camera);
   }
 
   /* ---------- Input ---------- */
@@ -810,7 +848,7 @@
     if (slot >= 0) { player.slot = slot; renderHotbar(); }
     if (event.code === 'KeyR') startReload();
     if (event.code === 'KeyQ') { player.slot = 3; renderHotbar(); }
-    if (event.code === 'KeyF' && player.slot === 3) Build.cycle(1);
+    if (event.code === 'KeyF' && player.slot === 3) { Build.cycle(1); renderHotbar(); }
   });
 
   canvas.addEventListener('mousedown', (event) => {
@@ -822,6 +860,7 @@
   canvas.addEventListener('wheel', (event) => {
     if (mode !== 'playing' || player.slot !== 3) return;
     Build.cycle(event.deltaY > 0 ? 1 : -1);
+    renderHotbar();
   }, { passive: true });
 
   el['fire-btn'].addEventListener('pointerdown', (e) => { e.preventDefault(); firing = true; shoot(); });
@@ -840,6 +879,16 @@
       e.preventDefault();
       if (mode !== 'playing') return;
       player.slot = i;
+      renderHotbar();
+    });
+  });
+
+  el.builds.querySelectorAll('.bpiece').forEach((piece) => {
+    piece.addEventListener('pointerdown', (e) => {
+      e.preventDefault();
+      if (mode !== 'playing') return;
+      player.slot = 3;
+      Build.select(Number(piece.dataset.piece));
       renderHotbar();
     });
   });
@@ -867,9 +916,52 @@
     }, 2500);
   });
 
+  /* ---------- Lobby ---------- */
+
+  Lobby.init(THREE);
+
+  function buildSkinPicker() {
+    el.skins.textContent = '';
+    Lobby.SKINS.forEach((skin, index) => {
+      const swatch = document.createElement('button');
+      swatch.className = `skin${index === Lobby.skin ? ' on' : ''}`;
+      swatch.type = 'button';
+      swatch.title = skin.name;
+      swatch.style.background = `#${skin.body.toString(16).padStart(6, '0')}`;
+      swatch.addEventListener('click', () => {
+        Lobby.setSkin(index);
+        try { localStorage.setItem('bot-royale-skin', String(index)); } catch { /* blocked */ }
+        buildSkinPicker();
+      });
+      el.skins.appendChild(swatch);
+    });
+  }
+
+  function showTab(name) {
+    el.career.classList.toggle('hidden', name !== 'career');
+    el.help.classList.toggle('hidden', name !== 'help');
+    document.querySelectorAll('.tab').forEach((tab) => {
+      tab.classList.toggle('on', (tab.textContent || '').toLowerCase() === name
+        || (name === 'lobby' && tab.classList.contains('on') && !el['tab-career'].contains(tab)));
+    });
+    document.querySelectorAll('.tab').forEach((tab) => {
+      tab.classList.toggle('on', (tab.textContent || '').trim().toLowerCase() === name);
+    });
+  }
+
+  el['tab-career'].addEventListener('click', () => showTab(el.career.classList.contains('hidden') ? 'career' : 'lobby'));
+  el['tab-help'].addEventListener('click', () => showTab(el.help.classList.contains('hidden') ? 'controls' : 'lobby'));
+  document.querySelector('.tab').addEventListener('click', () => showTab('lobby'));
+
   window.addEventListener('resize', resize);
   resize();
   Stats.load();
+  try {
+    const saved = Number(localStorage.getItem('bot-royale-skin'));
+    if (Number.isInteger(saved)) Lobby.setSkin(saved);
+  } catch { /* storage blocked, default outfit */ }
+  buildSkinPicker();
   renderBoard();
+  renderCareer();
   frame();
 })();
