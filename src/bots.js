@@ -94,8 +94,8 @@ const Bots = {
         feetY: 0,
         vy: 0,
         yaw: rng() * Math.PI * 2,
-        health: 100,
-        shield: rng() > 0.5 ? 50 : 0,
+        health: 90,
+        shield: rng() > 0.75 ? 40 : 0,
         alive: true,
         gun: guns[Math.floor(rng() * guns.length)],
         cooldown: 0,
@@ -103,9 +103,13 @@ const Bots = {
         state: 'wander',
         target: null,
         waypoint: null,
-        wood: 200,
+        wood: 160,
         buildCooldown: 0,
-        skill: 0.55 + rng() * 0.4,       // accuracy and reaction
+        /* Deliberately mediocre: low accuracy, slow to react, and they need a
+           moment between shots. Beatable in a straight fight. */
+        skill: 0.3 + rng() * 0.26,
+        reaction: 0.35 + rng() * 0.4,
+        seen: 0,
         kills: 0,
       };
       bot.figure.position.set(bot.x, 0, bot.z);
@@ -157,7 +161,7 @@ const Bots = {
         });
 
         let best = null;
-        let bestGap = 62;
+        let bestGap = 44;      // they notice you later than you notice them
         candidates.forEach((c) => {
           const gap = Math.hypot(c.x - bot.x, c.z - bot.z);
           if (gap > bestGap) return;
@@ -166,6 +170,7 @@ const Bots = {
           best = c;
         });
 
+        if (!best) bot.seen = 0;        // lost sight, so the aim resets
         bot.target = best;
         bot.state = best ? 'fight' : (bot.state === 'rotate' ? 'rotate' : 'wander');
       }
@@ -227,17 +232,22 @@ const Bots = {
   },
 
   shoot(bot, dt, world, gap, onShotAtPlayer, onBotDown) {
+    /* They have to have held you in view for a beat before the first shot,
+       so stepping round a corner is not instantly punished. */
+    bot.seen += dt;
+    if (bot.seen < bot.reaction) return;
     if (bot.cooldown > 0) return;
+
     const gun = bot.gun;
-    bot.cooldown = gun.delay + (1 - bot.skill) * 0.25;
+    bot.cooldown = gun.delay * 1.6 + (1 - bot.skill) * 0.5;
     if (gap > gun.range) return;
 
-    /* Accuracy falls off with distance and rises with skill. */
-    const chance = bot.skill * (1 - Math.min(0.75, gap / (gun.range * 1.4)));
+    /* Accuracy falls off steeply with distance. */
+    const chance = bot.skill * (1 - Math.min(0.82, gap / (gun.range * 1.1)));
     world.onBotFire(bot);
     if (Math.random() > chance) return;
 
-    const damage = gun.damage * (gun.pellets > 1 ? gun.pellets * 0.45 : 1);
+    const damage = gun.damage * 0.72 * (gun.pellets > 1 ? gun.pellets * 0.38 : 1);
     if (bot.target.isPlayer) {
       onShotAtPlayer(damage, bot);
     } else {
@@ -257,7 +267,7 @@ const Bots = {
     bot.health -= left;
 
     /* Panic wall: the reflex that defines the game. */
-    if (bot.buildCooldown <= 0 && bot.wood >= Build.WALL_COST && Math.random() < 0.55) {
+    if (bot.buildCooldown <= 0 && bot.wood >= Build.WALL_COST && Math.random() < 0.3) {
       bot.buildCooldown = 2.4;
       const saved = Build.selected;
       Build.select(0);

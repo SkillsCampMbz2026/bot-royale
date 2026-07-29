@@ -148,8 +148,11 @@
     const angle = rng() * Math.PI * 2;
     player.x = Math.cos(angle) * Arena.ARENA * 0.38;
     player.z = Math.sin(angle) * Arena.ARENA * 0.38;
-    player.feetY = 0;
+    /* Drop in from height: you glide down and pick your landing spot, and the
+       storm clock does not start until your feet are on the ground. */
+    player.feetY = 78;
     player.vy = 0;
+    player.dropping = true;
     player.yaw = Math.atan2(-player.x, -player.z);
     player.pitch = -0.12;
     player.health = 100;
@@ -173,6 +176,7 @@
     storm.timer = PHASES[0].wait;
     storm.shrinking = false;
     storm.damage = PHASES[0].damage;
+    planNextCircle();
 
     buildLootMeshes();
     placement = BOTS + 1;
@@ -180,17 +184,28 @@
     renderHotbar();
   }
 
+  const RARITY = {
+    Common: 0x9ca3af, Rare: 0x3b82f6, Epic: 0xa855f7, Legendary: 0xf59e0b,
+  };
+
   function buildLootMeshes() {
     const shapes = {
       weapon: () => new THREE.BoxGeometry(0.7, 0.24, 0.24),
       ammo: () => new THREE.BoxGeometry(0.4, 0.3, 0.3),
       potion: () => new THREE.CylinderGeometry(0.16, 0.2, 0.5, 8),
+      medkit: () => new THREE.BoxGeometry(0.44, 0.32, 0.3),
     };
-    const colours = { weapon: 0x60a5fa, ammo: 0xfbbf24, potion: 0x34d399 };
+    const colours = { weapon: 0x60a5fa, ammo: 0xfbbf24, potion: 0x38bdf8, medkit: 0xf87171 };
 
     Arena.loot.forEach((item) => {
+      /* A weapon's rarity is decided where it lies, so its glow on the ground
+         tells you whether it is worth the walk. */
+      if (item.kind === 'weapon' && !item.gun) {
+        item.gun = GUNS[Math.floor(Math.random() * GUNS.length)];
+      }
+      const tint = item.kind === 'weapon' ? RARITY[item.gun.rarity] : colours[item.kind];
       const mesh = new THREE.Mesh(shapes[item.kind](), new THREE.MeshStandardMaterial({
-        color: colours[item.kind], emissive: colours[item.kind], emissiveIntensity: 0.5, roughness: 0.4,
+        color: tint, emissive: tint, emissiveIntensity: 0.6, roughness: 0.4,
       }));
       const y = Arena.supportY(item.x, item.z, 40, 0.3);
       mesh.position.set(item.x, y + 0.6, item.z);
@@ -207,7 +222,8 @@
     player.yaw -= input.look.x;
     player.pitch = clamp(player.pitch - input.look.y, -MAX_PITCH, MAX_PITCH);
 
-    const speed = input.sprint ? SPRINT : WALK;
+    const gliding = player.dropping;
+    const speed = gliding ? 17 : (input.sprint ? SPRINT : WALK);
     const sin = Math.sin(player.yaw);
     const cos = Math.cos(player.yaw);
     const vx = (-sin * input.y + cos * input.x) * speed;
@@ -215,25 +231,39 @@
 
     const stepX = vx * dt;
     const stepZ = vz * dt;
-    if (!Arena.blocked(player.x + stepX, player.z, player.feetY, 1.8, RADIUS)) player.x += stepX;
-    if (!Arena.blocked(player.x, player.z + stepZ, player.feetY, 1.8, RADIUS)) player.z += stepZ;
+    if (gliding || !Arena.blocked(player.x + stepX, player.z, player.feetY, 1.8, RADIUS)) player.x += stepX;
+    if (gliding || !Arena.blocked(player.x, player.z + stepZ, player.feetY, 1.8, RADIUS)) player.z += stepZ;
     player.x = clamp(player.x, -Arena.ARENA / 2 - 20, Arena.ARENA / 2 + 20);
     player.z = clamp(player.z, -Arena.ARENA / 2 - 20, Arena.ARENA / 2 + 20);
 
     /* gravity, and stepping up onto whatever is underfoot */
     const support = Arena.supportY(player.x, player.z, player.feetY, RADIUS);
-    if (input.jump && player.grounded) {
-      player.vy = JUMP;
-      player.grounded = false;
-    }
-    player.vy -= GRAVITY * dt;
-    player.feetY += player.vy * dt;
-    if (player.feetY <= support) {
-      player.feetY = support;
-      player.vy = 0;
-      player.grounded = true;
+
+    if (gliding) {
+      // a glider fall: steady, steerable, and it ends the moment you touch down
+      player.feetY -= 15 * dt;
+      if (player.feetY <= support) {
+        player.feetY = support;
+        player.dropping = false;
+        player.vy = 0;
+        player.grounded = true;
+        Audio3D.blip('pickup');
+        feed('Landed — find a weapon', '#e8ecf8');
+      }
     } else {
-      player.grounded = false;
+      if (input.jump && player.grounded) {
+        player.vy = JUMP;
+        player.grounded = false;
+      }
+      player.vy -= GRAVITY * dt;
+      player.feetY += player.vy * dt;
+      if (player.feetY <= support) {
+        player.feetY = support;
+        player.vy = 0;
+        player.grounded = true;
+      } else {
+        player.grounded = false;
+      }
     }
 
     /* the avatar stands where you are, facing where you look */
@@ -427,17 +457,20 @@
       if (Math.abs(item.mesh.position.y - player.feetY) > 3) return;
 
       if (item.kind === 'weapon') {
-        const gun = GUNS[Math.floor(Math.random() * GUNS.length)];
+        const gun = item.gun;
         const empty = player.guns.indexOf(null);
         const slot = empty >= 0 ? empty : Math.max(0, player.slot - 1);
         player.guns[slot] = gun;
         player.ammo[slot] = gun.mag;
         player.slot = slot + 1;
-        feed(`Picked up ${gun.name} · ${gun.rarity}`, '#93c5fd');
+        feed(`${gun.rarity} ${gun.name}`, `#${RARITY[gun.rarity].toString(16).padStart(6, '0')}`);
         renderHotbar();
       } else if (item.kind === 'ammo') {
         player.ammo = player.ammo.map((a, i) => (player.guns[i] ? player.guns[i].mag : a));
         feed('Ammo topped up', '#fbbf24');
+      } else if (item.kind === 'medkit') {
+        player.health = Math.min(100, player.health + 50);
+        feed('+50 health', '#f87171');
       } else {
         player.shield = Math.min(100, player.shield + 50);
         feed('+50 shield', '#38bdf8');
@@ -451,7 +484,22 @@
 
   /* ---------- Storm ---------- */
 
+  /* Decide where the next circle will be, so it can be shown in advance. */
+  function planNextCircle() {
+    const phase = PHASES[Math.min(storm.phase, PHASES.length - 1)];
+    storm.nextRadius = phase.radius;
+    storm.nextX = storm.x + (Math.random() - 0.5) * storm.radius * 0.35;
+    storm.nextZ = storm.z + (Math.random() - 0.5) * storm.radius * 0.35;
+  }
+
   function updateStorm(dt) {
+    /* The clock is frozen until you land, so the drop is never a punishment. */
+    if (player.dropping) {
+      el['storm-label'].textContent = 'Dropping';
+      el['storm-timer'].textContent = `${Math.ceil(player.feetY)}m`;
+      return false;
+    }
+
     const phase = PHASES[Math.min(storm.phase, PHASES.length - 1)];
     storm.timer -= dt;
 
@@ -459,10 +507,9 @@
       if (storm.timer <= 0) {
         storm.shrinking = true;
         storm.timer = phase.shrink;
-        storm.target = phase.radius;
-        // the next circle drifts, so camping the middle is not automatic
-        storm.x += (Math.random() - 0.5) * storm.radius * 0.35;
-        storm.z += (Math.random() - 0.5) * storm.radius * 0.35;
+        storm.target = storm.nextRadius;
+        storm.x = storm.nextX;
+        storm.z = storm.nextZ;
         feed('The storm is closing', '#c4b5fd');
       }
     } else {
@@ -473,6 +520,7 @@
         storm.phase = Math.min(storm.phase + 1, PHASES.length - 1);
         storm.timer = PHASES[storm.phase].wait;
         storm.damage = PHASES[storm.phase].damage;
+        planNextCircle();
       }
     }
 
@@ -618,6 +666,17 @@
     mapCtx.beginPath();
     mapCtx.arc(toMap(storm.x), toMap(storm.z), storm.radius * scale, 0, Math.PI * 2);
     mapCtx.stroke();
+
+    /* where the storm is headed, so you can rotate before it moves */
+    if (!storm.shrinking && storm.nextRadius) {
+      mapCtx.strokeStyle = 'rgba(255,255,255,0.75)';
+      mapCtx.lineWidth = 1.5;
+      mapCtx.setLineDash([4, 4]);
+      mapCtx.beginPath();
+      mapCtx.arc(toMap(storm.nextX), toMap(storm.nextZ), storm.nextRadius * scale, 0, Math.PI * 2);
+      mapCtx.stroke();
+      mapCtx.setLineDash([]);
+    }
 
     mapCtx.fillStyle = 'rgba(185,161,124,0.8)';
     Arena.boxes.forEach((b) => {

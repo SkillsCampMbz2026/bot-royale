@@ -80,11 +80,63 @@ const Arena = {
 
   /* ---------- Build ---------- */
 
+  /* Sky dome, clouds and a ring of distant hills. None of it is collidable —
+     it exists so the map has a horizon instead of ending in fog. */
+  skybox(THREE, group) {
+    const sky = this.texture(256, (g, s) => {
+      const grd = g.createLinearGradient(0, 0, 0, s);
+      grd.addColorStop(0, '#2f6fb8');
+      grd.addColorStop(0.45, '#7db6e4');
+      grd.addColorStop(0.75, '#bfe0f5');
+      grd.addColorStop(1, '#e8f4ff');
+      g.fillStyle = grd;
+      g.fillRect(0, 0, s, s);
+    });
+    const dome = new THREE.Mesh(
+      new THREE.SphereGeometry(400, 24, 16),
+      new THREE.MeshBasicMaterial({
+        map: new THREE.CanvasTexture(sky), side: THREE.BackSide, depthWrite: false, fog: false,
+      }),
+    );
+    group.add(dome);
+
+    const cloudMat = new THREE.MeshBasicMaterial({
+      color: 0xffffff, transparent: true, opacity: 0.75, depthWrite: false, fog: false,
+    });
+    for (let i = 0; i < 26; i++) {
+      const cloud = new THREE.Group();
+      const puffs = 3 + Math.floor(Math.random() * 4);
+      for (let p = 0; p < puffs; p++) {
+        const puff = new THREE.Mesh(new THREE.SphereGeometry(6 + Math.random() * 9, 7, 5), cloudMat);
+        puff.position.set((p - puffs / 2) * 9, Math.random() * 4, Math.random() * 6);
+        puff.scale.y = 0.55;
+        cloud.add(puff);
+      }
+      const angle = Math.random() * Math.PI * 2;
+      const radius = 130 + Math.random() * 190;
+      cloud.position.set(Math.cos(angle) * radius, 90 + Math.random() * 60, Math.sin(angle) * radius);
+      group.add(cloud);
+    }
+
+    /* hills, sunk so only their tops show over the treeline */
+    const hillMat = new THREE.MeshStandardMaterial({ color: 0x4a6b48, roughness: 1 });
+    for (let i = 0; i < 26; i++) {
+      const angle = (i / 26) * Math.PI * 2 + Math.random() * 0.2;
+      const radius = ARENA * 0.78 + Math.random() * 40;
+      const size = 26 + Math.random() * 34;
+      const hill = new THREE.Mesh(new THREE.SphereGeometry(size, 10, 7), hillMat);
+      hill.position.set(Math.cos(angle) * radius, -size * 0.55, Math.sin(angle) * radius);
+      hill.scale.y = 0.6;
+      group.add(hill);
+    }
+  },
+
   build(THREE, scene, rng) {
     this.boxes = [];
     this.loot = [];
     const group = new THREE.Group();
     this.group = group;
+    this.skybox(THREE, group);
 
     const grass = new THREE.CanvasTexture(this.grassTexture());
     grass.wrapS = grass.wrapT = THREE.RepeatWrapping;
@@ -205,7 +257,11 @@ const Arena = {
       const x = (rng() - 0.5) * ARENA * 0.9;
       const z = (rng() - 0.5) * ARENA * 0.9;
       if (this.overlaps(x, z, 3)) continue;
-      this.loot.push({ x, z, kind: rng() > 0.4 ? 'weapon' : (rng() > 0.5 ? 'ammo' : 'potion') });
+      const roll = rng();
+      this.loot.push({
+        x, z,
+        kind: roll > 0.55 ? 'weapon' : roll > 0.38 ? 'ammo' : roll > 0.18 ? 'potion' : 'medkit',
+      });
     }
 
     scene.add(group);
