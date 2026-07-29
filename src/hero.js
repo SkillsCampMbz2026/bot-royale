@@ -15,6 +15,10 @@
 
 const Hero = {
   HEIGHT: 1.85,
+  /* glTF characters usually face +Z, but everything else in this game treats
+     -Z as forward (the camera sits behind at +Z looking down -Z). Without
+     this half turn you would be looking the character in the face. */
+  FACING: Math.PI,
   loaded: false,
   group: null,
   mixer: null,
@@ -77,11 +81,15 @@ const Hero = {
     box.getSize(size);
     const scale = this.HEIGHT / (size.y || 1);
     holder.scale.setScalar(scale);
-    holder.position.set(
-      -(box.min.x + box.max.x) / 2 * scale,
-      -box.min.y * scale,
-      -(box.min.z + box.max.z) / 2 * scale,
-    );
+    holder.rotation.y = this.FACING;
+
+    /* The centring offset is applied in the holder's own frame, so it has to
+       be turned by the same half turn or the model slides off its feet. */
+    const cx = -(box.min.x + box.max.x) / 2 * scale;
+    const cz = -(box.min.z + box.max.z) / 2 * scale;
+    const cos = Math.cos(this.FACING);
+    const sin = Math.sin(this.FACING);
+    holder.position.set(cx * cos + cz * sin, -box.min.y * scale, -cx * sin + cz * cos);
 
     /* --- bones --- */
     const bones = {};
