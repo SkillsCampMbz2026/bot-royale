@@ -152,12 +152,20 @@
     Build.init(THREE, scene);
     Build.reset();
 
-    /* the player's own body, seen over the shoulder, in the chosen outfit */
+    /* The character model moves into the match scene; if it never loaded, the
+       blocky stand-in takes its place. */
     if (player.figure) scene.remove(player.figure);
-    const skin = Lobby.current;
-    player.figure = Figure.make(THREE, skin.body, skin.trim);
-    player.figure.traverse((o) => { if (o.isMesh) o.castShadow = true; });
-    scene.add(player.figure);
+    if (Hero.loaded) {
+      Hero.attach(scene);
+      player.figure = Hero.group;
+      player.hero = true;
+    } else {
+      const skin = Lobby.current;
+      player.figure = Figure.make(THREE, skin.body, skin.trim);
+      player.figure.traverse((o) => { if (o.isMesh) o.castShadow = true; });
+      scene.add(player.figure);
+      player.hero = false;
+    }
 
     const angle = rng() * Math.PI * 2;
     player.x = Math.cos(angle) * Arena.ARENA * 0.38;
@@ -281,9 +289,16 @@
     }
 
     /* the avatar stands where you are, facing where you look */
-    player.figure.position.set(player.x, player.feetY, player.z);
-    player.figure.rotation.y = player.yaw;
-    Figure.animate(player.figure, dt, Math.hypot(vx, vz), player.slot === 1 || player.slot === 2);
+    const aiming = player.slot === 1 || player.slot === 2;
+    const pace = Math.hypot(vx, vz);
+    if (player.hero) {
+      Hero.place(player.x, player.feetY, player.z, player.yaw);
+      Hero.update(dt, player.dropping ? 0 : pace, player.yaw, aiming);
+    } else {
+      player.figure.position.set(player.x, player.feetY, player.z);
+      player.figure.rotation.y = player.yaw;
+      Figure.animate(player.figure, dt, pace, aiming);
+    }
 
     placeCamera();
   }
@@ -920,6 +935,23 @@
 
   Lobby.init(THREE);
 
+  /* The character model is 12.5 MB, so PLAY waits on it rather than dropping
+     you in with a placeholder that pops later. */
+  el.play.disabled = true;
+  el.play.textContent = 'LOADING…';
+  Hero.load(THREE, 'assets/hero.glb').then(() => {
+    Lobby.useHero();
+    buildSkinPicker();
+    el.play.disabled = false;
+    el.play.textContent = 'PLAY';
+    const found = Object.keys(Hero.bones).length;
+    if (found < 6) console.warn(`hero: only ${found} drive bones matched`);
+  }).catch((error) => {
+    console.error('character model failed to load', error);
+    el.play.disabled = false;
+    el.play.textContent = 'PLAY';
+  });
+
   function buildSkinPicker() {
     el.skins.textContent = '';
     Lobby.SKINS.forEach((skin, index) => {
@@ -927,7 +959,8 @@
       swatch.className = `skin${index === Lobby.skin ? ' on' : ''}`;
       swatch.type = 'button';
       swatch.title = skin.name;
-      swatch.style.background = `#${skin.body.toString(16).padStart(6, '0')}`;
+      const shown = Hero.loaded ? skin.tint : skin.body;
+      swatch.style.background = `#${shown.toString(16).padStart(6, '0')}`;
       swatch.addEventListener('click', () => {
         Lobby.setSkin(index);
         try { localStorage.setItem('bot-royale-skin', String(index)); } catch { /* blocked */ }

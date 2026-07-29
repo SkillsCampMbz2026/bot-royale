@@ -4,13 +4,16 @@
    It gets its own scene and camera so nothing has to be torn down when a match
    starts — the loop simply renders one or the other. */
 
+/* `tint` multiplies the character model's own textures, so the default has to
+   be white — anything else would stain the artwork. `body`/`trim` are only
+   used by the blocky stand-in when the model has not loaded. */
 const SKINS = [
-  { id: 'crimson', name: 'Crimson', body: 0xef4444, trim: 0xf8fafc },
-  { id: 'azure', name: 'Azure', body: 0x3b82f6, trim: 0xdbeafe },
-  { id: 'jade', name: 'Jade', body: 0x22c55e, trim: 0xecfccb },
-  { id: 'violet', name: 'Violet', body: 0xa855f7, trim: 0xf3e8ff },
-  { id: 'amber', name: 'Amber', body: 0xf59e0b, trim: 0x422006 },
-  { id: 'onyx', name: 'Onyx', body: 0x374151, trim: 0x9ca3af },
+  { id: 'default', name: 'Standard', tint: 0xffffff, body: 0xef4444, trim: 0xf8fafc },
+  { id: 'dusk', name: 'Dusk', tint: 0xc8d4ff, body: 0x3b82f6, trim: 0xdbeafe },
+  { id: 'moss', name: 'Moss', tint: 0xcfe6bd, body: 0x22c55e, trim: 0xecfccb },
+  { id: 'orchid', name: 'Orchid', tint: 0xe6ccff, body: 0xa855f7, trim: 0xf3e8ff },
+  { id: 'ember', name: 'Ember', tint: 0xffd9b0, body: 0xf59e0b, trim: 0x422006 },
+  { id: 'ash', name: 'Ash', tint: 0x9aa3b2, body: 0x374151, trim: 0x9ca3af },
 ];
 
 const Lobby = {
@@ -141,11 +144,33 @@ const Lobby = {
   setSkin(index) {
     this.skin = ((index % SKINS.length) + SKINS.length) % SKINS.length;
     const skin = SKINS[this.skin];
+
+    /* With the character model loaded the swatches are a tint on it; without
+       one they rebuild the blocky stand-in. */
+    if (Hero.loaded) {
+      Hero.setTint(skin.tint);
+      if (this.figure && this.figure !== Hero.group) {
+        this.scene.remove(this.figure);
+        this.figure = null;
+      }
+      return skin;
+    }
+
     if (this.figure) this.scene.remove(this.figure);
     this.figure = Figure.make(this.THREE, skin.body, skin.trim);
     this.figure.traverse((o) => { if (o.isMesh) o.castShadow = true; });
     this.scene.add(this.figure);
     return skin;
+  },
+
+  /* Called once the character model is in: it stands on the platform. */
+  useHero() {
+    if (!Hero.loaded) return;
+    if (this.figure && this.figure !== Hero.group) this.scene.remove(this.figure);
+    Hero.attach(this.scene);
+    Hero.place(0, 0, 0, 0);
+    this.figure = Hero.group;
+    Hero.setTint(SKINS[this.skin].tint);
   },
 
   get current() {
@@ -155,7 +180,12 @@ const Lobby = {
   /* Idle animation: a slow turntable, a breath, and the ring pulsing. */
   update(dt) {
     this.time += dt;
-    if (this.figure) {
+
+    if (this.figure === Hero.group && Hero.loaded) {
+      // its own idle clip carries the performance; we just turn the platform
+      Hero.group.rotation.y += dt * 0.35;
+      Hero.update(dt, 0, Hero.group.rotation.y, false);
+    } else if (this.figure) {
       this.figure.rotation.y += dt * 0.35;
       this.figure.position.y = Math.sin(this.time * 1.5) * 0.035;
       Figure.animate(this.figure, dt, 0, false);
