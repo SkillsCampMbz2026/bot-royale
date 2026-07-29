@@ -42,26 +42,38 @@
   const renderer = new THREE.WebGLRenderer({ canvas, antialias: true, powerPreference: 'high-performance' });
   renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
   renderer.outputEncoding = THREE.sRGBEncoding;
+  /* Filmic tone mapping rolls off highlights instead of clipping them to
+     white, which is most of what separates "lit" from "photographed". */
+  renderer.toneMapping = THREE.ACESFilmicToneMapping;
+  renderer.toneMappingExposure = 1.08;
+  renderer.physicallyCorrectLights = false;
 
   const coarse = window.matchMedia('(pointer: coarse)').matches;
-  renderer.shadowMap.enabled = !coarse;
+  renderer.shadowMap.enabled = true;
   renderer.shadowMap.type = THREE.PCFSoftShadowMap;
 
   const scene = new THREE.Scene();
-  scene.background = new THREE.Color(0x8fc4e8);
-  scene.fog = new THREE.Fog(0xa9d4ef, 90, 240);
+  scene.background = new THREE.Color(0x9cc9ea);
+  // fog tinted to the sky it fades into, pushed back so the horizon survives
+  scene.fog = new THREE.Fog(0xbcd9ef, 130, 400);
 
-  const camera = new THREE.PerspectiveCamera(74, 1, 0.1, 600);
-  const sun = new THREE.DirectionalLight(0xfff4e0, 1.05);
-  sun.position.set(60, 90, 40);
-  if (!coarse) {
-    sun.castShadow = true;
-    sun.shadow.mapSize.set(2048, 2048);
-    Object.assign(sun.shadow.camera, { left: -110, right: 110, top: 110, bottom: -110, near: 1, far: 320 });
-    sun.shadow.bias = -0.0012;
-  }
+  const camera = new THREE.PerspectiveCamera(74, 1, 0.1, 900);
+
+  /* Late-afternoon sun: low, warm, long shadows. */
+  const sun = new THREE.DirectionalLight(0xffe9c4, 1.25);
+  sun.position.set(-70, 78, 52);
+  sun.castShadow = true;
+  sun.shadow.mapSize.set(coarse ? 1024 : 2048, coarse ? 1024 : 2048);
+  Object.assign(sun.shadow.camera, { left: -120, right: 120, top: 120, bottom: -120, near: 1, far: 340 });
+  sun.shadow.bias = -0.0009;
+  sun.shadow.normalBias = 0.035;
   scene.add(sun);
-  scene.add(new THREE.HemisphereLight(0xbfe3ff, 0x4a6b3a, 0.75));
+
+  /* Sky bounce from above, warm ground bounce from below. */
+  scene.add(new THREE.HemisphereLight(0xcfe8ff, 0x5b7a44, 0.62));
+  const fill = new THREE.DirectionalLight(0xa8c8ff, 0.28);
+  fill.position.set(60, 40, -70);
+  scene.add(fill);
 
   /* storm dome */
   const stormMesh = new THREE.Mesh(

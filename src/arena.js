@@ -23,36 +23,105 @@ const Arena = {
     return surface;
   },
 
+  /* Grass with actual blades and mown patches, so the ground reads as a
+     surface rather than a flat green fill. */
   grassTexture() {
-    return this.texture(256, (g, s) => {
-      g.fillStyle = '#3f6b3a';
+    return this.texture(512, (g, s) => {
+      g.fillStyle = '#416b39';
       g.fillRect(0, 0, s, s);
-      for (let i = 0; i < 5000; i++) {
-        const v = Math.random();
-        g.fillStyle = v > 0.66 ? 'rgba(255,255,255,0.05)'
-          : v > 0.33 ? 'rgba(0,0,0,0.09)' : 'rgba(120,180,90,0.16)';
-        g.fillRect(Math.random() * s, Math.random() * s, 2, 3);
+
+      // broad patches of lighter and darker growth
+      for (let i = 0; i < 26; i++) {
+        const r = 30 + Math.random() * 90;
+        const grd = g.createRadialGradient(Math.random() * s, Math.random() * s, 0,
+          Math.random() * s, Math.random() * s, r);
+        const light = Math.random() > 0.5;
+        grd.addColorStop(0, light ? 'rgba(126,166,86,0.3)' : 'rgba(38,60,32,0.32)');
+        grd.addColorStop(1, 'rgba(0,0,0,0)');
+        g.fillStyle = grd;
+        g.fillRect(0, 0, s, s);
+      }
+
+      // blades
+      for (let i = 0; i < 9000; i++) {
+        const x = Math.random() * s;
+        const y = Math.random() * s;
+        const h = 2 + Math.random() * 5;
+        const shade = 70 + Math.random() * 70;
+        g.strokeStyle = `rgba(${shade * 0.55 | 0},${shade | 0},${shade * 0.45 | 0},0.5)`;
+        g.lineWidth = 1;
+        g.beginPath();
+        g.moveTo(x, y);
+        g.lineTo(x + (Math.random() - 0.5) * 2, y - h);
+        g.stroke();
+      }
+
+      // scuffs of bare earth
+      for (let i = 0; i < 90; i++) {
+        g.fillStyle = `rgba(104,80,52,${0.1 + Math.random() * 0.22})`;
+        g.beginPath();
+        g.ellipse(Math.random() * s, Math.random() * s, 3 + Math.random() * 12,
+          2 + Math.random() * 7, Math.random() * Math.PI, 0, Math.PI * 2);
+        g.fill();
       }
     });
   },
 
+  /* Rendered brick courses with mortar depth and weathering. */
   wallTexture() {
-    return this.texture(128, (g, s) => {
-      g.fillStyle = '#b9a17c';
+    return this.texture(256, (g, s) => {
+      g.fillStyle = '#6e6157';
       g.fillRect(0, 0, s, s);
-      g.strokeStyle = 'rgba(0,0,0,0.18)';
-      g.lineWidth = 2;
-      for (let i = 1; i < 4; i++) {
-        g.beginPath();
-        g.moveTo(0, (s / 4) * i);
-        g.lineTo(s, (s / 4) * i);
-        g.stroke();
+
+      const rows = 10;
+      const h = s / rows;
+      for (let row = 0; row < rows; row++) {
+        const offset = (row % 2) * (s / 8);
+        for (let col = -1; col < 5; col++) {
+          const x = offset + col * (s / 4);
+          const tone = 168 + Math.random() * 40;
+          g.fillStyle = `rgb(${tone},${tone * 0.88 | 0},${tone * 0.7 | 0})`;
+          g.fillRect(x + 2, row * h + 2, s / 4 - 4, h - 4);
+          // top highlight and bottom shadow give each brick a lip
+          g.fillStyle = 'rgba(255,255,255,0.13)';
+          g.fillRect(x + 2, row * h + 2, s / 4 - 4, 2);
+          g.fillStyle = 'rgba(0,0,0,0.26)';
+          g.fillRect(x + 2, row * h + h - 5, s / 4 - 4, 3);
+        }
       }
-      for (let i = 0; i < 1200; i++) {
-        g.fillStyle = Math.random() > 0.5 ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.07)';
+
+      for (let i = 0; i < 3200; i++) {
+        g.fillStyle = Math.random() > 0.5 ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.08)';
         g.fillRect(Math.random() * s, Math.random() * s, 2, 2);
       }
+      // damp streaks running down the wall
+      for (let i = 0; i < 20; i++) {
+        g.fillStyle = `rgba(60,50,40,${0.05 + Math.random() * 0.09})`;
+        g.fillRect(Math.random() * s, 0, 3 + Math.random() * 9, s);
+      }
     });
+  },
+
+  /* A soft dark blob laid on the ground under a prop. Contact shadows are the
+     cheapest way to stop things looking like they are hovering. */
+  contactShadow(THREE, group, x, z, radius, y) {
+    if (!this.shadowMat) {
+      const blob = this.texture(64, (g, s) => {
+        const grd = g.createRadialGradient(s / 2, s / 2, 0, s / 2, s / 2, s / 2);
+        grd.addColorStop(0, 'rgba(0,0,0,0.55)');
+        grd.addColorStop(0.55, 'rgba(0,0,0,0.25)');
+        grd.addColorStop(1, 'rgba(0,0,0,0)');
+        g.fillStyle = grd;
+        g.fillRect(0, 0, s, s);
+      });
+      this.shadowMat = new THREE.MeshBasicMaterial({
+        map: new THREE.CanvasTexture(blob), transparent: true, depthWrite: false,
+      });
+    }
+    const decal = new THREE.Mesh(new THREE.PlaneGeometry(radius * 2, radius * 2), this.shadowMat);
+    decal.rotation.x = -Math.PI / 2;
+    decal.position.set(x, (y || 0) + 0.03, z);
+    group.add(decal);
   },
 
   woodTexture() {
@@ -203,6 +272,31 @@ const Arena = {
       group.add(roof);
       this.addBox(cx, h, cz, (w + 1) / 2, 0.25, (d + 1) / 2, 'roof', Infinity, roof);
 
+      /* Lit windows, so buildings read as places rather than crates. */
+      const glass = new THREE.MeshStandardMaterial({
+        color: 0x2a3550, emissive: 0xffd79a, emissiveIntensity: 0.85, roughness: 0.25,
+      });
+      for (let floor = 0; floor < floors; floor++) {
+        const y = 1.6 + floor * 4;
+        [[0, -1], [0, 1], [-1, 0], [1, 0]].forEach(([sx, sz]) => {
+          const count = sx ? Math.max(1, Math.floor(d / 5)) : Math.max(1, Math.floor(w / 5));
+          for (let n = 0; n < count; n++) {
+            if (Math.random() > 0.72) continue;
+            const along = (n + 0.5) / count - 0.5;
+            const pane = new THREE.Mesh(new THREE.PlaneGeometry(1.3, 1.15), glass);
+            pane.position.set(
+              cx + sx * (w / 2 + 0.42) + (sz ? along * w : 0),
+              y,
+              cz + sz * (d / 2 + 0.42) + (sx ? along * d : 0),
+            );
+            pane.rotation.y = sx ? sx * Math.PI / 2 : (sz > 0 ? 0 : Math.PI);
+            group.add(pane);
+          }
+        });
+      }
+
+      this.contactShadow(THREE, group, cx, cz, Math.max(w, d) * 0.72, 0);
+
       // loot inside
       this.loot.push({ x: cx, z: cz, kind: 'weapon' });
       if (rng() > 0.5) this.loot.push({ x: cx + 2, z: cz + 1, kind: 'potion' });
@@ -222,15 +316,35 @@ const Arena = {
       if (this.overlaps(x, z, 4)) continue;
 
       const height = 5 + rng() * 4;
-      const trunk = new THREE.Mesh(new THREE.CylinderGeometry(0.45, 0.6, height, 7), trunkMat);
+      const trunk = new THREE.Mesh(new THREE.CylinderGeometry(0.4, 0.62, height, 8), trunkMat);
       trunk.position.set(x, height / 2, z);
+      trunk.rotation.y = rng() * Math.PI;
       trunk.castShadow = true;
+      trunk.receiveShadow = true;
       group.add(trunk);
 
-      const leaves = new THREE.Mesh(new THREE.ConeGeometry(2.6, 5.5, 8), leafMat);
-      leaves.position.set(x, height + 1.6, z);
-      leaves.castShadow = true;
+      /* Three tiers of foliage, each its own shade and rotation — one cone
+         reads as a traffic cone, three read as a tree. */
+      const leaves = new THREE.Group();
+      const hue = 0.28 + rng() * 0.05;
+      for (let tier = 0; tier < 3; tier++) {
+        const spread = 2.9 - tier * 0.7;
+        const cone = new THREE.Mesh(
+          new THREE.ConeGeometry(spread, 2.9 + rng() * 0.8, 9),
+          new THREE.MeshStandardMaterial({
+            color: new THREE.Color().setHSL(hue, 0.45 - tier * 0.04, 0.2 + tier * 0.055),
+            roughness: 1,
+          }),
+        );
+        cone.position.y = height * 0.62 + tier * 1.5;
+        cone.rotation.y = rng() * Math.PI;
+        cone.castShadow = true;
+        leaves.add(cone);
+      }
+      leaves.position.set(x, 0, z);
       group.add(leaves);
+
+      this.contactShadow(THREE, group, x, z, 2.6, 0);
 
       const box = this.addBox(x, height / 2, z, 0.6, height / 2, 0.6, 'tree', 100, trunk);
       box.extra = leaves;
@@ -245,11 +359,44 @@ const Arena = {
       const s = 1.4 + rng() * 2.4;
       const rock = new THREE.Mesh(new THREE.DodecahedronGeometry(s, 0), rockMat);
       rock.position.set(x, s * 0.6, z);
+      rock.rotation.set(rng() * 3, rng() * 3, rng() * 3);
       rock.castShadow = true;
       rock.receiveShadow = true;
       group.add(rock);
+      this.contactShadow(THREE, group, x, z, s * 1.5, 0);
       const box = this.addBox(x, s * 0.6, z, s * 0.8, s * 0.6, s * 0.8, 'rock', 140, rock);
       box.wood = 24;
+    }
+
+    /* --- ground cover: bushes and grass tufts, purely to break up the plane --- */
+    const bushMat = new THREE.MeshStandardMaterial({ color: 0x35592f, roughness: 1 });
+    const tuftMat = new THREE.MeshStandardMaterial({
+      color: 0x6f9c4a, roughness: 1, side: THREE.DoubleSide,
+    });
+    for (let i = 0; i < 150; i++) {
+      const x = (rng() - 0.5) * ARENA;
+      const z = (rng() - 0.5) * ARENA;
+      if (rng() > 0.55) {
+        const s = 0.7 + rng() * 0.9;
+        const bush = new THREE.Mesh(new THREE.SphereGeometry(s, 7, 5), bushMat);
+        bush.position.set(x, s * 0.62, z);
+        bush.scale.y = 0.7;
+        bush.castShadow = true;
+        group.add(bush);
+        this.contactShadow(THREE, group, x, z, s * 1.7, 0);
+      } else {
+        // two crossed quads: a grass tuft from any angle, for two triangles
+        const tuft = new THREE.Group();
+        for (let k = 0; k < 2; k++) {
+          const blade = new THREE.Mesh(new THREE.PlaneGeometry(1.5, 0.9), tuftMat);
+          blade.position.y = 0.45;
+          blade.rotation.y = k * Math.PI / 2;
+          tuft.add(blade);
+        }
+        tuft.position.set(x, 0, z);
+        tuft.rotation.y = rng() * Math.PI;
+        group.add(tuft);
+      }
     }
 
     /* --- open-field loot --- */
