@@ -1,0 +1,114 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>Bot Royale</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+  <canvas id="view"></canvas>
+
+  <div id="hurt"></div>
+
+  <div id="hud" class="hidden">
+    <div id="reticle"></div>
+    <div id="hitmarker" class="hidden"></div>
+    <div id="feed" class="hidden"></div>
+
+    <div class="topbar">
+      <div class="chip"><span class="chip__label">Alive</span><span class="chip__value" id="alive">10</span></div>
+      <div class="chip"><span class="chip__label">Elims</span><span class="chip__value" id="kills">0</span></div>
+      <div class="chip chip--storm">
+        <span class="chip__label" id="storm-label">Next circle</span>
+        <span class="chip__value" id="storm-timer">0:26</span>
+      </div>
+    </div>
+
+    <canvas id="minimap" width="200" height="200"></canvas>
+
+    <div class="bottom">
+      <div class="bars">
+        <div class="bar bar--shield"><div id="shield-fill"></div></div>
+        <div class="bar bar--health"><div id="health-fill"></div></div>
+        <div class="bars__nums">
+          <span><b id="shield-text">0</b> shield</span>
+          <span><b id="health-text">100</b> hp</span>
+        </div>
+      </div>
+
+      <div class="hotbar" id="hotbar">
+        <button class="slot on"><span class="slot__key">1</span><span class="slot__name">Pickaxe</span></button>
+        <button class="slot"><span class="slot__key">2</span><span class="slot__name">—</span></button>
+        <button class="slot"><span class="slot__key">3</span><span class="slot__name">—</span></button>
+        <button class="slot"><span class="slot__key">4</span><span class="slot__name">Build</span></button>
+      </div>
+
+      <div class="right">
+        <div class="chip chip--wood"><span class="chip__label">Wood</span><span class="chip__value" id="wood">120</span></div>
+        <div class="chip chip--ammo">
+          <span class="chip__label" id="gun-name">Pickaxe</span>
+          <span class="chip__value" id="ammo">∞</span>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div id="touch" class="hidden">
+    <div id="look-area"></div>
+    <div id="stick"><div id="stick-knob"></div></div>
+    <button id="fire-btn">FIRE</button>
+    <button id="jump-btn">JUMP</button>
+    <button id="build-btn">BUILD</button>
+    <button id="reload-btn">⟳</button>
+  </div>
+
+  <div id="overlay">
+    <div id="panel">
+      <h1 id="panel-title">Bot Royale</h1>
+      <p id="panel-text">
+        Ten drop in, one walks out. Loot weapons, chop wood, throw up walls, and stay ahead of the storm.
+        Every other player is a bot — and they build too.
+      </p>
+
+      <label class="who">
+        <span>Your name</span>
+        <input id="player-name" type="text" maxlength="14" spellcheck="false" placeholder="Player">
+      </label>
+
+      <button id="play" class="play">Drop in</button>
+
+      <ul class="keys">
+        <li><b>W A S D</b> move</li>
+        <li><b>Mouse</b> look · <b>Click</b> shoot</li>
+        <li><b>Space</b> jump · <b>Shift</b> sprint</li>
+        <li><b>1-4</b> pickaxe / guns / build</li>
+        <li><b>Q</b> build mode · <b>F</b> or wheel: wall / ramp / floor</li>
+        <li><b>R</b> reload · <b>Esc</b> pause</li>
+      </ul>
+
+      <div id="board">
+        <div class="board__head">
+          <span class="board__title">🏆 Best matches</span>
+          <button id="board-clear" type="button">Clear</button>
+        </div>
+        <ol id="board-list"></ol>
+        <p id="board-empty" class="board__empty">No matches yet — drop in and see how far you get.</p>
+        <span id="board-tally"></span>
+      </div>
+
+      <p class="note">On a phone: left stick to move, drag to look, FIRE / JUMP / BUILD on the right.</p>
+    </div>
+  </div>
+
+  <script src="vendor/three.min.js"></script>
+  <script src="src/arena.js"></script>
+  <script src="src/build.js"></script>
+  <script src="src/bots.js"></script>
+  <script src="src/controls.js"></script>
+  <script src="src/audio.js"></script>
+  <script src="src/scores.js"></script>
+  <script src="src/game.js"></script>
+</body>
+</html>
