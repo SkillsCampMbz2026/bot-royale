@@ -527,6 +527,74 @@ body::after {
 .play:hover { filter: brightness(1.05); }
 .play:active { transform: translateY(4px); box-shadow: 0 2px 0 #b26a00, 0 6px 16px rgba(0,0,0,0.45); }
 
+/* ---- LAN panel ---- */
+.lan {
+  display: grid; gap: 8px;
+  padding: 12px 14px;
+  background: rgba(6,10,26,0.66);
+  border: 1px solid var(--line);
+  border-radius: 4px;
+  backdrop-filter: blur(8px);
+}
+
+.lan__head { display: flex; align-items: center; justify-content: space-between; }
+
+.lan__title {
+  font-size: 0.66rem; font-weight: 800; letter-spacing: 0.12em; text-transform: uppercase;
+  color: var(--muted);
+}
+
+.lan__count { font-size: 0.72rem; color: var(--muted); }
+.lan__count b { font-size: 0.92rem; font-weight: 900; color: var(--gold); }
+
+.netlist { list-style: none; display: grid; gap: 3px; max-height: 132px; overflow-y: auto; }
+
+.netrow {
+  display: grid;
+  grid-template-columns: 10px 1fr auto;
+  align-items: center; gap: 8px;
+  padding: 4px 6px;
+  font-size: 0.76rem;
+  background: rgba(255,255,255,0.04);
+  border-radius: 3px;
+}
+
+.netrow--you { box-shadow: inset 0 0 0 1px rgba(255,197,61,0.5); }
+.netrow__dot { width: 10px; height: 10px; border-radius: 50%; }
+.netrow__name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+.netrow__state {
+  font-size: 0.56rem; font-weight: 800; letter-spacing: 0.1em;
+  color: var(--muted);
+}
+
+.netrow:has(.netrow__state:not(:empty)) .netrow__state { color: var(--muted); }
+
+.lan__buttons { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; }
+
+.btn-lan {
+  padding: 9px;
+  font-family: inherit;
+  font-size: 0.7rem; font-weight: 800; letter-spacing: 0.1em;
+  color: var(--ink);
+  background: rgba(255,255,255,0.08);
+  border: 1px solid var(--line);
+  border-radius: 3px;
+  cursor: pointer;
+}
+
+.btn-lan:hover { background: rgba(255,255,255,0.14); }
+.btn-lan:disabled { opacity: 0.4; cursor: not-allowed; }
+
+.btn-lan--go {
+  color: #06210f;
+  background: linear-gradient(180deg, #7bef9f, #29b757);
+  border-color: transparent;
+}
+
+.lan__status { font-size: 0.66rem; color: var(--muted); }
+.lan__status.bad { color: #fca5a5; }
+
 .ready {
   font-size: 0.6rem; letter-spacing: 0.14em; text-transform: uppercase;
   color: var(--muted);

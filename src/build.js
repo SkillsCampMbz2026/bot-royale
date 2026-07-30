@@ -153,6 +153,9 @@ const Build = {
       const box = Arena.addBox(shape.x, shape.y, shape.z, shape.hx, shape.hy, shape.hz,
         'built', this.HEALTH, mesh);
       box.built = true;
+      this.lastPiece = {
+        x: shape.x, y: shape.y, z: shape.z, hx: shape.hx, hy: shape.hy, hz: shape.hz, slope: false,
+      };
       return this.cost();
     }
 
@@ -193,7 +196,48 @@ const Build = {
     // the whole ramp goes at once, not step by step
     stepBoxes.forEach((box) => { box.onDeath = () => { group.visible = false; }; });
 
+    this.lastPiece = {
+      x: shape.x, y: spot.level + G / 2, z: shape.z, slope: true, rotation: group.rotation.y,
+      steps: stepBoxes.map((b) => ({ x: b.x, y: b.y, z: b.z, hx: b.hx, hy: b.hy, hz: b.hz })),
+    };
     return this.cost();
+  },
+
+  /* Rebuild a piece another player placed, from the description the server
+     relayed. Same geometry path as a local placement, minus the legality
+     check — the server already accepted it. */
+  adopt(piece) {
+    if (!piece || !this.THREE) return;
+    const THREE = this.THREE;
+    if (piece.slope) {
+      // ramps arrive as their four collision steps plus the visual angle
+      const group = new THREE.Group();
+      const slab = new THREE.Mesh(
+        new THREE.BoxGeometry(Arena.GRID, 0.35, Arena.GRID * 1.42), this.materials.wood,
+      );
+      slab.rotation.x = -Math.PI / 4;
+      group.add(slab);
+      group.position.set(piece.x, piece.y, piece.z);
+      group.rotation.y = piece.rotation || 0;
+      this.scene.add(group);
+      (piece.steps || []).forEach((step) => {
+        const box = Arena.addBox(step.x, step.y, step.z, step.hx, step.hy, step.hz,
+          'built', this.HEALTH, null);
+        box.built = true;
+        box.onDeath = () => { group.visible = false; };
+      });
+      return;
+    }
+    const mesh = new THREE.Mesh(
+      new THREE.BoxGeometry(piece.hx * 2, piece.hy * 2, piece.hz * 2), this.materials.wood,
+    );
+    mesh.position.set(piece.x, piece.y, piece.z);
+    mesh.castShadow = true;
+    mesh.receiveShadow = true;
+    this.scene.add(mesh);
+    const box = Arena.addBox(piece.x, piece.y, piece.z, piece.hx, piece.hy, piece.hz,
+      'built', this.HEALTH, mesh);
+    box.built = true;
   },
 
   reset() {

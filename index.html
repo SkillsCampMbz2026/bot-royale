@@ -105,7 +105,19 @@
         </div>
 
         <button id="play" class="play">PLAY</button>
-        <p class="ready">Ready · Solo</p>
+
+        <div class="lan">
+          <div class="lan__head">
+            <span class="lan__title">🌐 LAN match</span>
+            <span class="lan__count"><b id="net-count">0</b>/<span id="net-min">2</span></span>
+          </div>
+          <ol id="net-list" class="netlist"></ol>
+          <div class="lan__buttons">
+            <button id="net-join" class="btn-lan">JOIN</button>
+            <button id="net-ready" class="btn-lan btn-lan--go" disabled>READY</button>
+          </div>
+          <p id="net-status" class="lan__status">Everyone on this Wi-Fi opens the same address</p>
+        </div>
       </aside>
 
       <section class="lobby-panel hidden" id="career">
@@ -154,6 +166,7 @@
   <script src="src/build.js"></script>
   <script src="src/bots.js"></script>
   <script src="src/hero.js"></script>
+  <script src="src/net.js"></script>
   <script src="src/lobby.js"></script>
   <script src="src/controls.js"></script>
   <script src="src/audio.js"></script>

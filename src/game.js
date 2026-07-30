@@ -112,8 +112,9 @@
   let lastEntry = null;
   let placement = BOTS + 1;
   let feedTimer = 0;
+  let online = false;          // LAN match: humans only, server authoritative
   const clock = new THREE.Clock();
-  const rng = Math.random;
+  let rng = Math.random;
 
   /* ---------- Elements ---------- */
 
@@ -125,6 +126,7 @@
     'board-empty', 'board-clear', 'board-tally', 'stick', 'stick-knob', 'look-area',
     'builds', 'compass-tape', 'xp-level', 'xp-fill', 'xp-note', 'career-wins',
     'career', 'help', 'tab-career', 'tab-help', 'skins', 'result',
+    'net-list', 'net-count', 'net-min', 'net-join', 'net-ready', 'net-status',
   ].forEach((id) => { el[id] = document.getElementById(id); });
   const mapCtx = el.minimap.getContext('2d');
 
@@ -148,6 +150,9 @@
     lootMeshes.forEach((m) => scene.remove(m));
     lootMeshes = [];
 
+    /* In a LAN match every client builds the map from the server's seed, so
+       the world is identical for everyone without shipping any geometry. */
+    rng = online ? seededRandom(Net.seed) : Math.random;
     Arena.build(THREE, scene, rng);
     Build.init(THREE, scene);
     Build.reset();
@@ -188,7 +193,10 @@
     player.reloading = 0;
     player.cooldown = 0;
 
-    Bots.spawn(THREE, scene, BOTS, rng, GUNS);
+    /* Bots are a solo-play thing. Online you are fighting the other people on
+       the network, and the roster is whoever is connected. */
+    if (online) Bots.clear(scene);
+    else Bots.spawn(THREE, scene, BOTS, rng, GUNS);
 
     storm.x = (rng() - 0.5) * 30;
     storm.z = (rng() - 0.5) * 30;
@@ -357,20 +365,26 @@
     return { origin: rayOrigin, direction: rayDir };
   }
 
-  /* Closest bot the ray passes through, tested as a capsule-ish box. */
+  /* Closest hittable body the ray passes through: bots offline, the other
+     players online. Both are tested as an upright box. */
   function botAlongRay(ray, range) {
     let best = null;
     let bestT = range;
-    Bots.list.forEach((bot) => {
-      if (!bot.alive) return;
-      const box = { x: bot.x, y: bot.feetY + 1.1, z: bot.z, hx: 0.5, hy: 1.1, hz: 0.5 };
+
+    const consider = (ref, x, feetY, z, isRemote) => {
+      const box = { x, y: feetY + 1.1, z, hx: 0.5, hy: 1.1, hz: 0.5 };
       const t = Arena.rayBox(ray.origin, ray.direction, box);
       if (t === null || t >= bestT) return;
-      const headTop = bot.feetY + 2.25;
       const hitY = ray.origin.y + ray.direction.y * t;
       bestT = t;
-      best = { bot, distance: t, headshot: hitY > headTop - 0.45 };
-    });
+      best = { bot: ref, distance: t, headshot: hitY > feetY + 1.8, remote: isRemote };
+    };
+
+    if (online) {
+      Net.remotes.forEach((r) => { if (r.alive) consider(r, r.x, r.y, r.z, true); });
+    } else {
+      Bots.list.forEach((bot) => { if (bot.alive) consider(bot, bot.x, bot.feetY, bot.z, false); });
+    }
     return best;
   }
 
@@ -389,6 +403,8 @@
         if (wood) {
           player.wood += wood;
           feed(`+${wood} wood`, '#fbbf24');
+          // tell everyone else the tree is gone, or they would still see it
+          if (online) Net.reportBroke(Arena.boxes.indexOf(hit.box));
         }
         if (hit.box.onDeath) hit.box.onDeath();
         flashHit(false);
@@ -404,6 +420,7 @@
       if (spent) {
         player.wood -= spent;
         Audio3D.blip('build');
+        if (online && Build.lastPiece) Net.reportBuild(Build.lastPiece);
       }
       return;
     }
@@ -446,9 +463,17 @@
   }
 
   function hurtBot(bot, damage, headshot) {
+    Audio3D.blip(headshot ? 'headshot' : 'hit');
+
+    /* Online the server applies damage: we only report the hit, so both
+       players always agree on who died. */
+    if (online) {
+      Net.reportShot(bot.id, damage, headshot);
+      return;
+    }
+
     const before = bot.alive;
     Bots.hurt(bot, damage, null, onBotDown);
-    Audio3D.blip(headshot ? 'headshot' : 'hit');
     if (before && !bot.alive) {
       player.kills += 1;
       feed(`You eliminated ${bot.name}`, '#4ade80');
@@ -508,7 +533,124 @@
       item.taken = true;
       scene.remove(item.mesh);
       Audio3D.blip('pickup');
+      if (online) {
+        Net.reportTook(Arena.loot.indexOf(item));
+        if (item.kind === 'potion') Net.reportHeal('shield');
+        if (item.kind === 'medkit') Net.reportHeal('health');
+      }
     });
+  }
+
+  /* ---------- Online plumbing ---------- */
+
+  /* Draw one blocky figure per connected player. The detailed character model
+     is only used for yourself: nine skinned copies would cost far more than
+     they add, and cloning one needs SkeletonUtils, which the core build of
+     Three does not ship. */
+  function syncRemotes(dt) {
+    Net.remotes.forEach((r) => {
+      if (!r.figure) {
+        r.figure = Figure.make(THREE, r.colour, 0x1f2937);
+        r.figure.traverse((o) => { if (o.isMesh) o.castShadow = true; });
+        scene.add(r.figure);
+      }
+      r.figure.visible = r.alive;
+      if (!r.alive) return;
+      r.figure.position.set(r.x, r.y, r.z);
+      r.figure.rotation.y = r.yaw;
+      Figure.animate(r.figure, dt, r.speed, r.slot === 1 || r.slot === 2);
+    });
+  }
+
+  /* Health, the storm and the match state all come from the server. */
+  function syncFromServer() {
+    if (Net.selfHp !== undefined) {
+      player.health = Net.selfHp;
+      player.shield = Net.selfShield;
+    }
+    if (Net.storm) {
+      storm.x = Net.storm.x;
+      storm.z = Net.storm.z;
+      storm.radius = Net.storm.radius;
+      storm.damage = Net.storm.damage;
+      storm.timer = Net.storm.timer;
+      storm.shrinking = Net.storm.shrinking;
+      storm.nextX = Net.storm.nextX;
+      storm.nextZ = Net.storm.nextZ;
+      storm.nextRadius = Net.storm.nextRadius;
+    }
+    if (Net.selfAlive === false && mode === 'playing') finish(false, 'another player');
+  }
+
+  function wireNet() {
+    Net.on('welcome', () => {
+      netSay(`Connected · ${Net.roster.length} in the lobby`);
+      renderRoster();
+    }).on('roster', () => {
+      renderRoster();
+    }).on('start', () => {
+      online = true;
+      start();
+      feed('Match starting…', '#ffd76b');
+    }).on('live', () => {
+      feed('GO', '#4ade80');
+    }).on('down', (msg) => {
+      if (msg.id === Net.id) return;
+      const who = Net.roster.find((p) => p.id === msg.id);
+      feed(`${msg.byName} eliminated ${who ? who.name : 'a player'}`, '#cbd5e1');
+      if (msg.by === Net.id) {
+        player.kills += 1;
+        Audio3D.blip('headshot');
+      }
+    }).on('over', (msg) => {
+      if (mode === 'playing') finish(msg.winner === Net.id, msg.winnerName);
+      else {
+        el['panel-title'].textContent = msg.winner === Net.id ? '🏆 Victory Royale!' : 'Match over';
+        el['panel-text'].textContent = `${msg.winnerName || 'Nobody'} won that one.`;
+      }
+    }).on('lobby', () => {
+      netSay('Back in the lobby — press READY');
+      renderRoster();
+    }).on('build', (piece) => {
+      Build.adopt(piece);
+    }).on('broke', (index) => {
+      const box = Arena.boxes[index];
+      if (box) Arena.damageBox(box, Infinity === box.health ? 0 : 1e9);
+    }).on('took', (index) => {
+      const item = Arena.loot[index];
+      if (item && !item.taken) {
+        item.taken = true;
+        if (item.mesh) scene.remove(item.mesh);
+      }
+    }).on('close', () => {
+      online = false;
+      netSay('Disconnected from the server', true);
+      renderRoster();
+    }).on('error', (text) => netSay(text, true));
+  }
+
+  function netSay(text, bad) {
+    el['net-status'].textContent = text;
+    el['net-status'].classList.toggle('bad', Boolean(bad));
+  }
+
+  function renderRoster() {
+    const list = Net.roster;
+    el['net-count'].textContent = list.length;
+    el['net-min'].textContent = Net.minPlayers;
+    el['net-list'].textContent = '';
+    list.forEach((p) => {
+      const row = document.createElement('li');
+      row.className = `netrow${p.id === Net.id ? ' netrow--you' : ''}`;
+      const swatch = `#${(p.colour || 0).toString(16).padStart(6, '0')}`;
+      row.innerHTML = `<span class="netrow__dot" style="background:${swatch}"></span>
+        <span class="netrow__name"></span>
+        <span class="netrow__state">${p.ready ? 'READY' : 'waiting'}</span>`;
+      row.querySelector('.netrow__name').textContent = p.name;
+      el['net-list'].appendChild(row);
+    });
+    el['net-ready'].textContent = Net.roster.find((p) => p.id === Net.id && p.ready)
+      ? 'NOT READY' : 'READY';
   }
 
   /* ---------- Storm ---------- */
@@ -560,10 +702,15 @@
     const outside = gap > storm.radius;
     el.hurt.classList.toggle('storm', outside);
     if (outside && player.alive) {
-      player.health -= storm.damage * dt;
-      if (player.health <= 0) {
-        player.health = 0;
-        finish(false, 'the storm');
+      /* Only your client knows where you are, so it measures the storm damage
+         and reports it; the server still owns the resulting health. */
+      if (online) Net.reportHurt(storm.damage * dt);
+      else {
+        player.health -= storm.damage * dt;
+        if (player.health <= 0) {
+          player.health = 0;
+          finish(false, 'the storm');
+        }
       }
     }
     return outside;
@@ -821,12 +968,19 @@
       if (player.slot === 3) Build.preview(player, player.wood);
       else Build.hidePreview();
 
-      Bots.update(dt, {
-        player, storm,
-        onShotAtPlayer: hurtPlayer,
-        onBotDown,
-        onBotFire: () => {},
-      });
+      if (online) {
+        Net.reportMove(dt, player);
+        Net.interpolate(dt);
+        syncRemotes(dt);
+        syncFromServer();
+      } else {
+        Bots.update(dt, {
+          player, storm,
+          onShotAtPlayer: hurtPlayer,
+          onBotDown,
+          onBotFire: () => {},
+        });
+      }
 
       pickups();
       updateStorm(dt);
@@ -854,7 +1008,38 @@
     if (!locked && mode === 'playing' && !coarse) pause();
   };
 
-  el.play.addEventListener('click', () => (mode === 'paused' ? resume() : start()));
+  el.play.addEventListener('click', () => {
+    if (mode === 'paused') return resume();
+    online = false;               // the PLAY button is always solo vs bots
+    return start();
+  });
+
+  /* ---------- LAN buttons ---------- */
+
+  wireNet();
+
+  el['net-join'].addEventListener('click', () => {
+    if (Net.connected) {
+      Net.disconnect();
+      return;
+    }
+    netSay('Connecting…');
+    Net.connect(Stats.name);
+    el['net-join'].textContent = 'LEAVE';
+    el['net-ready'].disabled = false;
+  });
+
+  el['net-ready'].addEventListener('click', () => {
+    const me = Net.roster.find((p) => p.id === Net.id);
+    Net.setReady(!(me && me.ready));
+  });
+
+  Net.on('close', () => {
+    el['net-join'].textContent = 'JOIN';
+    el['net-ready'].disabled = true;
+    online = false;
+    netSay('Disconnected', true);
+  });
 
   window.addEventListener('keydown', (event) => {
     if (event.code === 'Escape' && mode === 'playing') pause();
